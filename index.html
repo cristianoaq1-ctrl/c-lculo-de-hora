@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cálculo de Horas com Reagrupamento</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lora:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        math: ['Lora', 'Cambria Math', 'serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #f8fafc;
+            color: #334155;
+        }
+
+        /* Container da Conta Matemática - Espaçamento extra no topo para os números de empréstimo/vai-um */
+        #math-board {
+            display: grid;
+            column-gap: 0.5rem;
+            row-gap: 0.25rem;
+            justify-items: center;
+            align-items: center;
+            padding: 4rem 2rem 2rem 2rem; 
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 1rem;
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+            border: 1px solid #e2e8f0;
+            grid-template-columns: 2.5rem 4rem 2rem 4rem 2rem; /* Op, H, 'h', M, 'min' */
+        }
+
+        /* Célula Numérica Base */
+        .math-cell {
+            height: 2.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            transition: all 0.4s ease;
+            position: relative; /* CRÍTICO: Permite posicionar os elementos de empréstimo */
+            width: 100%;
+        }
+
+        .text-label {
+            font-size: 1.25rem;
+            color: #64748b;
+            font-family: 'Inter', sans-serif;
+            font-weight: 500;
+        }
+
+        /* Traço de Subtração/Soma */
+        .math-line {
+            height: 2px;
+            background-color: #1e293b;
+            width: 100%;
+            margin: 0.5rem 0;
+            grid-column: 1 / span 5;
+        }
+
+        /* Número riscado (que emprestou ou foi reagrupado) */
+        .crossed-out {
+            color: #cbd5e1 !important;
+        }
+        .crossed-out::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 5%;
+            right: 5%;
+            height: 3px;
+            background-color: #ef4444; /* Linha vermelha cortando */
+            transform: rotate(-15deg);
+            z-index: 10;
+            animation: slash 0.3s ease-out forwards;
+        }
+
+        /* Valor alterado posicionado acima (Empréstimo ou Reagrupamento) */
+        .borrow-val {
+            position: absolute;
+            top: -1.8rem;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 1.25rem;
+            color: #ef4444;
+            font-weight: 700;
+            z-index: 20;
+        }
+
+        /* O 'vai 1' na soma */
+        .carry-val {
+            position: absolute;
+            top: -1.8rem;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 1.25rem;
+            color: #3b82f6; /* Azul para diferenciar do empréstimo */
+            font-weight: 700;
+            z-index: 20;
+        }
+
+        /* Animações Gerais */
+        .fade-in { animation: fadeIn 0.5s ease-in-out forwards; }
+        .slide-down { animation: slideDown 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
+        .pop-in { animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+        
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes popIn { from { opacity: 0; transform: scale(0.5) translateX(-100%); } to { opacity: 1; transform: scale(1) translateX(-50%); } }
+        @keyframes slash { from { width: 0; left: 50%; } to { width: 90%; left: 5%; } }
+
+        /* Realce amarelo para passos didáticos */
+        .highlight {
+            background-color: #fef08a;
+            border-radius: 0.375rem;
+            color: #854d0e !important;
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+
+<body class="min-h-screen flex flex-col items-center py-10 px-4">
+
+    <div class="max-w-5xl w-full bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+        
+        <header class="bg-indigo-900 text-white p-8 text-center">
+            <h1 class="text-3xl font-bold tracking-tight mb-2">
+                Cálculo de Horas com Reagrupamento
+            </h1>
+            <p class="text-indigo-200 font-medium">Veja o algoritmo passo a passo da soma e subtração de horas (Base 60).</p>
+        </header>
+
+        <main class="p-8">
+            <!-- Entradas de Horas -->
+            <div class="flex flex-col md:flex-row items-end justify-center gap-4 mb-10 bg-slate-50 p-6 rounded-xl border border-slate-200">
+                
+                <!-- Tempo 1 -->
+                <div class="flex flex-col items-center">
+                    <label class="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Tempo 1</label>
+                    <div class="flex gap-2 items-center">
+                        <div class="flex flex-col">
+                            <input type="number" id="h1" min="0" placeholder="0" value="2"
+                                class="w-16 sm:w-20 text-center text-2xl p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-math text-slate-800">
+                            <span class="text-xs text-center text-slate-500 mt-1">h</span>
+                        </div>
+                        <span class="text-xl text-slate-400 font-bold mb-5">:</span>
+                        <div class="flex flex-col">
+                            <input type="number" id="m1" min="0" max="59" placeholder="00" value="15"
+                                class="w-16 sm:w-20 text-center text-2xl p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-math text-slate-800">
+                            <span class="text-xs text-center text-slate-500 mt-1">min</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Operador -->
+                <div class="flex flex-col items-center pb-6 md:pb-5">
+                    <select id="operator" class="text-2xl p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-math text-slate-800 font-bold cursor-pointer bg-white">
+                        <option value="-">- (Subtração)</option>
+                        <option value="+">+ (Soma)</option>
+                    </select>
+                </div>
+
+                <!-- Tempo 2 -->
+                <div class="flex flex-col items-center">
+                    <label class="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Tempo 2</label>
+                    <div class="flex gap-2 items-center">
+                        <div class="flex flex-col">
+                            <input type="number" id="h2" min="0" placeholder="0" value="1"
+                                class="w-16 sm:w-20 text-center text-2xl p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-math text-slate-800">
+                            <span class="text-xs text-center text-slate-500 mt-1">h</span>
+                        </div>
+                        <span class="text-xl text-slate-400 font-bold mb-5">:</span>
+                        <div class="flex flex-col">
+                            <input type="number" id="m2" min="0" max="59" placeholder="00" value="45"
+                                class="w-16 sm:w-20 text-center text-2xl p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-math text-slate-800">
+                            <span class="text-xs text-center text-slate-500 mt-1">min</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Botão -->
+                <div class="pb-6 md:pb-5 ml-0 md:ml-4 mt-4 md:mt-0 w-full md:w-auto">
+                    <button id="btn-iniciar" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-8 rounded-lg shadow-md transition-colors flex items-center justify-center">
+                        Calcular
+                    </button>
+                </div>
+            </div>
+
+            <!-- Área de Resolução -->
+            <div id="workspace" class="hidden flex-col items-center">
+                
+                <!-- Caixa Pedagógica -->
+                <div id="instruction-box" class="w-full bg-blue-50 border border-blue-200 text-blue-900 rounded-xl p-6 mb-8 text-center text-lg font-medium shadow-sm transition-all duration-300 min-h-[6rem] flex flex-col items-center justify-center leading-relaxed">
+                    Aguardando início...
+                </div>
+
+                <div class="w-full overflow-x-auto pb-6">
+                    <div id="math-board" class="font-math text-slate-900 font-medium">
+                        <!-- Células geradas via JS -->
+                    </div>
+                </div>
+
+                <div class="flex justify-center mt-6">
+                    <button id="btn-next" class="bg-emerald-600 hover:bg-emerald-700 text-white text-lg font-bold py-4 px-10 rounded-xl shadow-lg transition-colors flex items-center transform hover:scale-105 active:scale-95">
+                        Avançar Etapa <i class="fa-solid fa-arrow-right ml-3"></i>
+                    </button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const btnIniciar = document.getElementById('btn-iniciar');
+        const workspace = document.getElementById('workspace');
+        const mathBoard = document.getElementById('math-board');
+        const btnNext = document.getElementById('btn-next');
+        const instructionBox = document.getElementById('instruction-box');
+        
+        const inputH1 = document.getElementById('h1');
+        const inputM1 = document.getElementById('m1');
+        const inputH2 = document.getElementById('h2');
+        const inputM2 = document.getElementById('m2');
+        const opSelect = document.getElementById('operator');
+
+        let algorithmSteps = [];
+        let currentStepIndex = 0;
+
+        // Função auxiliar para padronizar exibição (ex: 5 -> 05)
+        function pad(num) {
+            return num.toString().padStart(2, '0');
+        }
+
+        // Função para atualizar a caixa de instruções
+        function updateInstruction(htmlMessage, type = 'default') {
+            instructionBox.innerHTML = htmlMessage;
+            instructionBox.className = "w-full rounded-xl p-6 mb-8 text-center text-lg font-medium shadow-sm transition-all duration-300 min-h-[6rem] flex flex-col items-center justify-center leading-relaxed fade-in ";
+            
+            if (type === 'action') {
+                instructionBox.className += "bg-amber-50 border border-amber-300 text-amber-900";
+            } else if (type === 'success') {
+                instructionBox.className += "bg-emerald-50 border border-emerald-300 text-emerald-900";
+            } else {
+                instructionBox.className += "bg-blue-50 border border-blue-200 text-blue-900";
+            }
+        }
+
+        function createGridCell(content, row, col, extraClasses = "", id = "") {
+            const cell = document.createElement('div');
+            cell.className = `math-cell opacity-0 ${extraClasses}`;
+            cell.style.gridRow = row;
+            cell.style.gridColumn = col;
+            cell.innerHTML = content; 
+            if (id) cell.id = id;
+            mathBoard.appendChild(cell);
+            return cell;
+        }
+
+        function setupInitialBoard(h1, m1, op, h2, m2) {
+            mathBoard.innerHTML = '';
+
+            // Linha 1: Tempo 1
+            let cellH1 = createGridCell(pad(h1), 1, 2, "fade-in font-bold text-slate-800", "cell-h1");
+            cellH1.style.opacity = '1';
+            let labelH1 = createGridCell("h", 1, 3, "fade-in text-label");
+            labelH1.style.opacity = '1';
+            let cellM1 = createGridCell(pad(m1), 1, 4, "fade-in font-bold text-slate-800", "cell-m1");
+            cellM1.style.opacity = '1';
+            let labelM1 = createGridCell("min", 1, 5, "fade-in text-label");
+            labelM1.style.opacity = '1';
+
+            // Linha 2: Operador e Tempo 2
+            let cellOp = createGridCell(op, 2, 1, "fade-in font-bold text-slate-400 text-3xl", "cell-op");
+            cellOp.style.opacity = '1';
+            let cellH2 = createGridCell(pad(h2), 2, 2, "fade-in font-bold text-slate-800", "cell-h2");
+            cellH2.style.opacity = '1';
+            let labelH2 = createGridCell("h", 2, 3, "fade-in text-label");
+            labelH2.style.opacity = '1';
+            let cellM2 = createGridCell(pad(m2), 2, 4, "fade-in font-bold text-slate-800", "cell-m2");
+            cellM2.style.opacity = '1';
+            let labelM2 = createGridCell("min", 2, 5, "fade-in text-label");
+            labelM2.style.opacity = '1';
+
+            // Linha 3: Traço
+            const lineContainer = document.createElement('div');
+            lineContainer.className = "math-line fade-in";
+            lineContainer.style.opacity = '1';
+            lineContainer.style.gridRow = 3;
+            mathBoard.appendChild(lineContainer);
+        }
+
+        function clearHighlights() {
+            document.querySelectorAll('.highlight').forEach(el => el.classList.remove('highlight'));
+        }
+
+        function generateSteps(h1, m1, op, h2, m2) {
+            let steps = [];
+            
+            if (op === '+') {
+                let totalM = m1 + m2;
+                let carry = 0;
+                let finalM = totalM;
+                
+                steps.push({ 
+                    action: 'EVAL_MIN_ADD', 
+                    m1, m2, totalM 
+                });
+
+                if (totalM >= 60) {
+                    carry = 1;
+                    finalM = totalM - 60;
+                    steps.push({ 
+                        action: 'CONVERT_MIN', 
+                        totalM, finalM, carry 
+                    });
+                } else {
+                    steps.push({
+                        action: 'WRITE_MIN_ADD',
+                        finalM
+                    });
+                }
+
+                let totalH = h1 + h2 + carry;
+                steps.push({ 
+                    action: 'EVAL_HOUR_ADD', 
+                    h1, h2, carry, totalH 
+                });
+                
+                steps.push({ action: 'FINISH', resH: totalH, resM: finalM, op });
+
+            } else if (op === '-') {
+                let currentH1 = h1;
+                let currentM1 = m1;
+                
+                steps.push({ action: 'CHECK_MIN_SUB', m1, m2 });
+
+                if (m1 < m2) {
+                    currentH1 = h1 - 1;
+                    currentM1 = m1 + 60;
+                    steps.push({ action: 'REGROUP', h1, newH1: currentH1, m1, newM1: currentM1 });
+                }
+
+                let resM = currentM1 - m2;
+                steps.push({ action: 'SUB_MIN', m1: currentM1, m2, resM });
+
+                let resH = currentH1 - h2;
+                steps.push({ action: 'SUB_HOUR', h1: currentH1, h2, resH });
+
+                steps.push({ action: 'FINISH', resH, resM, op });
+            }
+            return steps;
+        }
+
+        btnIniciar.addEventListener('click', () => {
+            const valH1 = parseInt(inputH1.value, 10) || 0;
+            const valM1 = parseInt(inputM1.value, 10) || 0;
+            const op = opSelect.value;
+            const valH2 = parseInt(inputH2.value, 10) || 0;
+            const valM2 = parseInt(inputM2.value, 10) || 0;
+
+            // Validação de tempo negativo na subtração
+            if (op === '-') {
+                const totalMin1 = (valH1 * 60) + valM1;
+                const totalMin2 = (valH2 * 60) + valM2;
+                if (totalMin1 < totalMin2) {
+                    alert("Para subtração, o Tempo 1 deve ser maior ou igual ao Tempo 2.");
+                    return;
+                }
+            }
+
+            btnNext.disabled = false;
+            btnNext.classList.remove('hidden', 'opacity-50', 'cursor-not-allowed');
+            
+            setupInitialBoard(valH1, valM1, op, valH2, valM2);
+            algorithmSteps = generateSteps(valH1, valM1, op, valH2, valM2);
+            currentStepIndex = 0;
+
+            workspace.classList.remove('hidden');
+            workspace.classList.add('fade-in');
+            
+            let actionName = op === '+' ? 'somar' : 'subtrair';
+            updateInstruction(`<p>Vamos ${actionName} os tempos.</p><p class="mt-2 text-sm text-blue-700">Clique em "Avançar Etapa" para prosseguir passo a passo.</p>`, 'default');
+        });
+
+        btnNext.addEventListener('click', () => {
+            if (currentStepIndex >= algorithmSteps.length) return;
+            const step = algorithmSteps[currentStepIndex];
+            clearHighlights();
+
+            // ------------- LÓGICA DE SOMA -------------
+            if (step.action === 'EVAL_MIN_ADD') {
+                document.getElementById('cell-m1').classList.add('highlight');
+                document.getElementById('cell-m2').classList.add('highlight');
+                
+                updateInstruction(`<p>Começamos pela coluna dos <strong>Minutos</strong>.</p><p class="mt-2 text-xl font-bold">${step.m1} + ${step.m2} = ${step.totalM}</p>`, 'action');
+            } 
+            else if (step.action === 'CONVERT_MIN') {
+                // Remove destaques anteriores
+                document.getElementById('cell-m1').classList.remove('highlight');
+                document.getElementById('cell-m2').classList.remove('highlight');
+                document.getElementById('cell-h1').classList.add('highlight');
+
+                updateInstruction(`<p>Atenção! A soma deu <strong>${step.totalM} minutos</strong> (passou de 60).</p><p class="mt-2 text-blue-700 font-bold"><i class="fa-solid fa-arrow-right-arrow-left"></i> Reagrupamento: 60 min viram +1 hora. Restam ${step.finalM} min.</p>`, 'action');
+
+                // Anima o "+1" na coluna das horas
+                let cellH1 = document.getElementById('cell-h1');
+                let carrySpan = document.createElement('span');
+                carrySpan.className = 'carry-val pop-in';
+                carrySpan.textContent = '+1';
+                cellH1.appendChild(carrySpan);
+
+                // Escreve o resultado final dos minutos
+                let resM = createGridCell(pad(step.finalM), 4, 4, "text-indigo-700 font-bold slide-down", "cell-resm");
+                resM.style.opacity = '1';
+                let labelResM = createGridCell("min", 4, 5, "fade-in text-label");
+                labelResM.style.opacity = '1';
+
+            } 
+            else if (step.action === 'WRITE_MIN_ADD') {
+                updateInstruction(`<p>A soma dos minutos é menor que 60. Apenas registramos o valor.</p>`, 'default');
+                let resM = createGridCell(pad(step.finalM), 4, 4, "text-indigo-700 font-bold slide-down", "cell-resm");
+                resM.style.opacity = '1';
+                let labelResM = createGridCell("min", 4, 5, "fade-in text-label");
+                labelResM.style.opacity = '1';
+            }
+            else if (step.action === 'EVAL_HOUR_ADD') {
+                document.getElementById('cell-h1').classList.add('highlight');
+                document.getElementById('cell-h2').classList.add('highlight');
+                
+                let eq = step.carry > 0 ? `${step.carry} (vai um) + ${step.h1} + ${step.h2} = ${step.totalH}` : `${step.h1} + ${step.h2} = ${step.totalH}`;
+                updateInstruction(`<p>Agora somamos a coluna das <strong>Horas</strong>.</p><p class="mt-2 text-xl font-bold">${eq}</p>`, 'action');
+
+                let resH = createGridCell(pad(step.totalH), 4, 2, "text-indigo-700 font-bold slide-down", "cell-resh");
+                resH.style.opacity = '1';
+                let labelResH = createGridCell("h", 4, 3, "fade-in text-label");
+                labelResH.style.opacity = '1';
+            }
+
+            // ------------- LÓGICA DE SUBTRAÇÃO -------------
+            else if (step.action === 'CHECK_MIN_SUB') {
+                document.getElementById('cell-m1').classList.add('highlight');
+                document.getElementById('cell-m2').classList.add('highlight');
+                
+                if (step.m1 < step.m2) {
+                    updateInstruction(`<p>Verificando os minutos: <strong>${step.m1} - ${step.m2}</strong>.</p><p class="mt-2 text-red-600 font-bold">Não é possível! Precisaremos pedir emprestado (Reagrupar).</p>`, 'action');
+                } else {
+                    updateInstruction(`<p>Verificando os minutos: <strong>${step.m1} - ${step.m2}</strong>.</p><p class="mt-2">É possível subtrair normalmente.</p>`, 'default');
+                }
+            }
+            else if (step.action === 'REGROUP') {
+                document.getElementById('cell-h1').classList.add('highlight');
+                document.getElementById('cell-m1').classList.add('highlight');
+
+                updateInstruction(`<p>Tiramos <strong>1 hora</strong> (${step.h1} <i class="fa-solid fa-arrow-right"></i> ${step.newH1}) e transformamos em <strong>+60 minutos</strong> (${step.m1} <i class="fa-solid fa-arrow-right"></i> ${step.newM1}).</p>`, 'action');
+
+                // Risca as horas e coloca novo valor
+                let cellH1 = document.getElementById('cell-h1');
+                cellH1.classList.add('crossed-out');
+                let hSpan = document.createElement('span');
+                hSpan.className = 'borrow-val pop-in text-red-600';
+                hSpan.textContent = pad(step.newH1);
+                cellH1.appendChild(hSpan);
+
+                // Risca os minutos e coloca novo valor
+                let cellM1 = document.getElementById('cell-m1');
+                cellM1.classList.add('crossed-out');
+                let mSpan = document.createElement('span');
+                mSpan.className = 'borrow-val pop-in text-emerald-600'; // Cor diferente para o ganho
+                mSpan.innerHTML = `<span class="text-xs absolute -top-4 -left-2 text-slate-400">+60</span>${pad(step.newM1)}`;
+                cellM1.appendChild(mSpan);
+            }
+            else if (step.action === 'SUB_MIN') {
+                document.getElementById('cell-m1').classList.add('highlight');
+                document.getElementById('cell-m2').classList.add('highlight');
+
+                updateInstruction(`<p>Subtraímos os minutos: <strong>${step.m1} - ${step.m2} = ${step.resM}</strong>.</p>`, 'default');
+
+                let resM = createGridCell(pad(step.resM), 4, 4, "text-indigo-700 font-bold slide-down", "cell-resm");
+                resM.style.opacity = '1';
+                let labelResM = createGridCell("min", 4, 5, "fade-in text-label");
+                labelResM.style.opacity = '1';
+            }
+            else if (step.action === 'SUB_HOUR') {
+                document.getElementById('cell-h1').classList.add('highlight');
+                document.getElementById('cell-h2').classList.add('highlight');
+
+                updateInstruction(`<p>Subtraímos as horas: <strong>${step.h1} - ${step.h2} = ${step.resH}</strong>.</p>`, 'default');
+
+                let resH = createGridCell(pad(step.resH), 4, 2, "text-indigo-700 font-bold slide-down", "cell-resh");
+                resH.style.opacity = '1';
+                let labelResH = createGridCell("h", 4, 3, "fade-in text-label");
+                labelResH.style.opacity = '1';
+            }
+            
+            // ------------- FINALIZAÇÃO -------------
+            else if (step.action === 'FINISH') {
+                let opText = step.op === '+' ? 'Soma' : 'Subtração';
+                updateInstruction(`<p class="text-2xl mb-2"><i class="fa-solid fa-check-circle text-emerald-500 mr-2"></i><strong>${opText} Finalizada!</strong></p><p>O resultado é <strong>${step.resH}h e ${step.resM}min</strong>.</p>`, 'success');
+                btnNext.classList.add('hidden');
+            }
+
+            currentStepIndex++;
+        });
+    </script>
+</body>
+</html>
